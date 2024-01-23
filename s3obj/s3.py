@@ -15,17 +15,23 @@ class S3Boto3:
     """
     A wrapper class around the boto3 s3 client
     """
+
     def __init__(
-        self,
-        endpoint_url: str = None,
-        config: Boto3Config = Boto3Config(
-            retries={"max_attempts": 10, "mode": "adaptive"}
-        ),
+            self,
+            endpoint_url: str = None,
+            config: Boto3Config = Boto3Config(
+                retries={"max_attempts": 10, "mode": "adaptive"}
+            ),
     ):
         self.s3_resource = boto3.resource(
             "s3", endpoint_url=endpoint_url, config=config
         )
         self.s3_client = boto3.client("s3", endpoint_url=endpoint_url, config=config)
+
+    def get_header(self, bucket: str, prefix: str):
+        header = self.s3_client.head_object(Bucket=bucket, Key=prefix)
+        return {k: v for k, v in header.items() if
+                k in {"LastModified", "ContentLength", "ETag", "VersionId", "ContentType", "Metadata"}}
 
     def check_exists(self, bucket: str, prefix: str):
         """
@@ -38,7 +44,7 @@ class S3Boto3:
 
         """
         try:
-            self.s3_client.head_object(Bucket=bucket, Key=prefix)
+            self.get_header(bucket, prefix)
             return True
         except ClientError:
             return False
@@ -86,7 +92,7 @@ class S3Boto3:
         return True
 
     def download_file(
-        self, bucket: str, prefix: str, target: str, overwrite: bool = False
+            self, bucket: str, prefix: str, target: str, overwrite: bool = False
     ):
         """
         Download file from s3
@@ -115,15 +121,16 @@ class S3Object:
     """
     A class to represent an s3 object to make it easier to upload and download
     """
+
     def __init__(
-        self,
-        bucket: str,
-        prefix: str,
-        key: Optional[str] = None,
-        local_path: Optional[str] = None,
-        base_dir: str = "/tmp",
-        s3_client: Optional[S3Boto3] = None,
-        **kwargs,
+            self,
+            bucket: str,
+            prefix: str,
+            key: Optional[str] = None,
+            local_path: Optional[str] = None,
+            base_dir: str = "/tmp",
+            s3_client: Optional[S3Boto3] = None,
+            **kwargs,
     ):
         """
 
@@ -143,6 +150,7 @@ class S3Object:
         self._name = None
         self._ext = None
         self._local_path = local_path
+        self._header = None
         self.s3_client = s3_client or S3Boto3()
 
     def __repr__(self):
@@ -150,12 +158,12 @@ class S3Object:
 
     @classmethod
     def from_s3_path(
-        cls,
-        s3_path: str,
-        base_dir: str = "/tmp",
-        key: Optional[str] = None,
-        local_path: Optional[str] = None,
-        **kwargs,
+            cls,
+            s3_path: str,
+            base_dir: str = "/tmp",
+            key: Optional[str] = None,
+            local_path: Optional[str] = None,
+            **kwargs,
     ):
         path_parts = s3_path.replace("s3://", "").split("/")
         bucket = path_parts.pop(0)
@@ -169,13 +177,19 @@ class S3Object:
             **kwargs,
         )
 
+    @property
+    def header(self):
+        if self._header is None:
+            self._header = self.s3_client.get_header(self.bucket, self.prefix)
+        return self._header
+
     @classmethod
     def from_local_path(
-        cls,
-        local_path: str,
-        base_dir: str = "/tmp",
-        key: Optional[str] = None,
-        **kwargs,
+            cls,
+            local_path: str,
+            base_dir: str = "/tmp",
+            key: Optional[str] = None,
+            **kwargs,
     ):
         if base_dir not in local_path:
             raise Exception(f"base_dir {base_dir} not part of {local_path}")
@@ -260,7 +274,8 @@ class S3Object:
         Returns: None
 
         """
-        self.s3_client.upload_file(file_name=self.local_path, bucket=self.bucket,prefix=self.prefix, overwrite=overwrite)
+        self.s3_client.upload_file(file_name=self.local_path, bucket=self.bucket, prefix=self.prefix,
+                                   overwrite=overwrite)
 
     def exists_local(self):
         """
